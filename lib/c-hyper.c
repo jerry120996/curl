@@ -170,26 +170,12 @@ static int hyper_body_chunk(void *userdata, const hyper_buf *chunk)
   size_t wrote;
 
   if(0 == k->bodywrites++) {
-#if 0
-    if(conn->bits.close) {
-      /* Abort after the headers if "follow Location" is set and we're set
-         to close anyway. */
-      return CURLE_OK;
-    }
-#endif
     bool done = FALSE;
     CURLcode result = Curl_http_firstwrite(data, data->conn, &done);
     if(result || done) {
       infof(data, "Return early from hyper_body_chunk\n");
       data->state.hresult = result;
       return HYPER_ITER_BREAK;
-    }
-    if(k->newurl) {
-      /* We have a new url to load, but since we want to be able
-         to re-use this connection properly, we read the full
-         response in "ignore more" */
-      k->ignorebody = TRUE;
-      infof(data, "Ignoring the response-body\n");
     }
   }
   if(k->ignorebody)
@@ -199,8 +185,10 @@ static int hyper_body_chunk(void *userdata, const hyper_buf *chunk)
   wrote = writebody(buf, 1, len, data->set.out);
   Curl_set_in_callback(data, false);
 
-  if(wrote != len)
+  if(wrote != len) {
+    data->state.hresult = CURLE_WRITE_ERROR;
     return HYPER_ITER_BREAK;
+  }
 
   data->req.bytecount += len;
   Curl_pgrsSetDownloadCounter(data, data->req.bytecount);
@@ -322,17 +310,18 @@ static CURLcode hyperstream(struct Curl_easy *data,
 
     if(t == HYPER_TASK_ERROR) {
       hyper_code errnum = hyper_error_code(hypererr);
-      if(errnum == HYPERE_ABORTED_BY_CALLBACK)
+      if(errnum == HYPERE_ABORTED_BY_CALLBACK) {
         /* override Hyper's view, might not even be an error */
         result = data->state.hresult;
+        infof(data, "hyperstream is done (by early callback)\n");
+      }
       else {
         uint8_t errbuf[256];
         size_t errlen = hyper_error_print(hypererr, errbuf, sizeof(errbuf));
         failf(data, "Hyper: %.*s", (int)errlen, errbuf);
         result = CURLE_RECV_ERROR; /* not a very good return code */
       }
-      if(result)
-        *done = TRUE;
+      *done = TRUE;
       hyper_error_free(hypererr);
       break;
     }
