@@ -1173,7 +1173,7 @@ static CURLcode readwrite_upload(struct Curl_easy *data,
                  (size_t)nbody);
 
       k->writebytecount += nbody;
-      Curl_pgrsSetUploadCounter(data, nbody);
+      Curl_pgrsSetUploadCounter(data, k->writebytecount);
     }
 
     if((!k->upload_chunky || k->forbidchunk) &&
